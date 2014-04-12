@@ -89,7 +89,7 @@ pub mod mqtt {
 	}
 
 	impl Message {
-		pub fn encode(&self, result: |&[u8]| -> ()) {
+		pub fn encode<T>(&self, result: |&[u8]| -> T) -> T {
 			#[inline]
 			fn opt_len(opt: &Option<~str>) -> uint {
 				match *opt { 
@@ -147,7 +147,7 @@ pub mod mqtt {
 											lwt_flags(&opts.will) |
 											(opts.clean as u8) << 1;
 
-					let mut buf = slice::with_capacity(payload_len + 12);
+					let mut buf = slice::from_fn(payload_len + 12, |_| 0);
 					copy_memory(buf, [0x10, 10, 0x00, 0x04, 0x4c, 0x51, 0x54, 0x54, 4, flags, msb(opts.keepAlive), lsb(opts.keepAlive)]);
 
 					let client_len = opts.clientId.len() as u16;
@@ -183,7 +183,10 @@ pub mod mqtt {
 
 					result(buf)
 				}
-				Connack(_) => ()
+				Connack(_) => {
+					let s: ~[u8] = ~[0x20];
+					result(s)
+				}
 			}
 		}
 	}
@@ -220,11 +223,18 @@ pub mod mqtt {
 
 	#[cfg(test)]
 	pub mod tests {
-		use mqtt::ConnectOptions;
+		use mqtt::{ConnectOptions, Connect};
+		use std::io::net::ip::SocketAddr;
+		use std::io::net::tcp::TcpStream;
 
 		#[test]
-		fn example() {
-			let con = ConnectOptions {
+		fn send_connect_msg() {
+			println!("parsing URI");
+			let addr = from_str::<SocketAddr>("127.0.0.1:1883").unwrap();
+			println!("connecting to localhost");
+			let mut socket = TcpStream::connect(addr).unwrap();
+			println!("connected?!");
+			let opts = ConnectOptions {
 				clientId: ~"tim-rust",
 				user: None,
 				pw: None,
@@ -232,6 +242,15 @@ pub mod mqtt {
 				clean: false,
 				keepAlive: 60
 			};
+			let connect = Connect(opts);
+
+			let mut res = connect.encode(|v| socket.write(v));
+			res = res.and_then(|_| socket.flush());
+			match res {
+				Ok(_) => println!("success"),
+				Err(e) => println!("Test failed: {}", e)
+			};
+			//socket.close();
 		}
 	}
 

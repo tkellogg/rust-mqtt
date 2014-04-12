@@ -5,7 +5,7 @@ mqtt: mqtt.rs
 	rustc $(OPTS) $<
 
 example: example.rs 
-	rustc $(OPTS) -L . $<
+	rustc $(OPTS) -L bin/ $<
 
 test: mqtt.rs
 	rustc --test $(OPTS) $< && bin/mqtt
