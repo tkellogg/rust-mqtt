@@ -1,7 +1,11 @@
 CRATE = libmqtt-2d3cf69a-0.0.dylib
+OPTS = --out-dir bin/
 
 mqtt: mqtt.rs
-	rustc --lib $<
+	rustc $(OPTS) $<
 
-example: example.rs
-	rustc $<
+example: example.rs 
+	rustc $(OPTS) -L . $<
+
+test: mqtt.rs
+	rustc --test $(OPTS) $< && bin/mqtt

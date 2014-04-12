@@ -1,9 +1,12 @@
-#[feature(struct_variant)];
+#![crate_id = "mqtt#0.10"]
+#![desc = "An Message Queue Telemetry Transport (MQTT) client"]
+#![crate_type = "lib"]
+#![feature(struct_variant)]
 
 
 pub mod mqtt {
-	use std::vec;
-	use std::vec::bytes::copy_memory;
+	use std::slice;
+	use std::slice::bytes::copy_memory;
 
 	trait MqttHeader {
 		fn asHeader(&self) -> u8;
@@ -56,8 +59,8 @@ pub mod mqtt {
 	}
 
 	fn parse_short(data: &[u8], index: uint) -> Option<u16> {
-		let b1 = data.get_opt(index).and_then(|x| x.to_u16());
-		let b2 = data.get_opt(index + 1).and_then(|x| x.to_u16());
+		let b1 = data.get(index).and_then(|x| x.to_u16());
+		let b2 = data.get(index + 1).and_then(|x| x.to_u16());
 		b1.and_then(|x| b2.map(|y| {
 			(x << 8) | y
 		}))
@@ -144,7 +147,7 @@ pub mod mqtt {
 											lwt_flags(&opts.will) |
 											(opts.clean as u8) << 1;
 
-					let mut buf = vec::with_capacity(payload_len + 12);
+					let mut buf = slice::with_capacity(payload_len + 12);
 					copy_memory(buf, [0x10, 10, 0x00, 0x04, 0x4c, 0x51, 0x54, 0x54, 4, flags, msb(opts.keepAlive), lsb(opts.keepAlive)]);
 
 					let client_len = opts.clientId.len() as u16;
@@ -186,7 +189,7 @@ pub mod mqtt {
 	}
 
 	pub fn decode(data: &[u8]) -> Option<Message> {
-		let hd = data.head_opt();
+		let hd = data.head();
 		let msg = hd.and_then(|x| parse_message_type(*x));
 		msg.and_then(|x| match x {
 			CONNECT => None,
@@ -209,10 +212,27 @@ pub mod mqtt {
 	fn parse_connack(data: &[u8]) -> Option<Message> {
 		let remaining_length = parse_short(data, 1);
 		let ret_code = remaining_length.and_then(|x| match x {
-			2 => data.get_opt(4),
+			2 => data.get(4),
 			_ => None
 		});
 		ret_code.and_then(|r| Some(Connack(*r)))
+	}
+
+	#[cfg(test)]
+	pub mod tests {
+		use mqtt::ConnectOptions;
+
+		#[test]
+		fn example() {
+			let con = ConnectOptions {
+				clientId: ~"tim-rust",
+				user: None,
+				pw: None,
+				will: None,
+				clean: false,
+				keepAlive: 60
+			};
+		}
 	}
 
 }
