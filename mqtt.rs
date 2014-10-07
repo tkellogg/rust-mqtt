@@ -52,7 +52,7 @@ pub mod mqtt {
 	}
 
 	pub mod encode {
-		use mqtt::{LastWill};
+		use mqtt::{LastWill, QoS};
 
 		#[inline]
 		fn msb(i: u16) -> u8 {
@@ -67,6 +67,44 @@ pub mod mqtt {
 		#[inline]
 		fn fshift<T>(opt: Option<&T>, by: uint) -> u8 {
 			opt.map_or(0, |_| 1 << by)
+		}
+
+		fn rlen_size(remaining_len: uint) -> uint {
+			match remaining_len {
+				x if x < 128 => 1,
+				x if x < 16384 => 2,
+				x if x < 2097152 => 3,
+				_ => 4
+			}
+		}
+
+		fn rlen(buf: &mut Vec<u8>, remaining_length: u32) {
+			fn nth_mask(n: u8, rl: u32) -> u8 {
+				let shift = (((n as uint) - 1) * 7) + 8;
+				let mask = 0x7F << shift;
+				let val = rl & mask;
+				let shifted = val >> shift;
+				(shifted | 0x80) as u8
+			}
+
+			match remaining_length {
+				x if x < 128 => buf.push(x as u8),
+				x if x < 16384 => {
+					buf.push(nth_mask(1, x));
+					buf.push((x & 0xff) as u8);
+				}
+				x if x < 2097152 => {
+					buf.push(nth_mask(2, x));
+					buf.push(nth_mask(1, x));
+					buf.push((x & 0xff) as u8);
+				}
+				x => {
+					buf.push(nth_mask(3, x));
+					buf.push(nth_mask(2, x));
+					buf.push(nth_mask(1, x));
+					buf.push((x & 0xff) as u8);
+				}
+			}
 		}
 
 		/// Encode connect message into a vector so it can be written into a TCP stream
@@ -128,6 +166,33 @@ pub mod mqtt {
 			buf
 		}
 
+		pub fn publish(topic: &str, msg: &str, qos: QoS, retain: bool, dup: bool, id: Option<u16>) -> Vec<u8> {
+
+			let pid_len = id.map_or(0, |_| 2);
+			let remaining_len = 2 + topic.len() + msg.len() + pid_len;
+			let buf_len = remaining_len + 1 + rlen_size(remaining_len) as uint;
+			let mut buf: Vec<u8> = Vec::with_capacity(buf_len);
+
+			let fixed_header = 0x30 | ((dup as u8) << 3) | ((qos as u8) << 1) | (retain as u8);
+			buf.push(fixed_header);
+
+			rlen(&mut buf, remaining_len as u32);
+
+			let topic_len = topic.len() as u16;
+			buf.push(msb(topic_len));
+			buf.push(lsb(topic_len));
+			buf.push_all(topic.as_bytes());
+
+			for v in id.iter() {
+				buf.push(msb(*v));
+				buf.push(lsb(*v));
+			}
+
+			buf.push_all(msg.as_bytes());
+
+			buf
+		}
+
 		pub fn disconnect() -> Vec<u8> {
 			let b: u8 = 0xc0 as u8;
 			vec!(b)
@@ -168,9 +233,9 @@ pub mod mqtt {
 
 	#[cfg(test)]
 	pub mod tests {
-		use std::io::net::ip::SocketAddr;
 		use std::io::net::tcp::TcpStream;
-		use mqtt::encode::{connect, disconnect};
+		use mqtt::{AtMostOnce};
+		use mqtt::encode::{connect, disconnect, publish};
 
 		#[test]
 		fn send_connect_msg() {
@@ -182,14 +247,17 @@ pub mod mqtt {
 			let mut res = socket.write(connect_buf.as_slice());
 			//res = res.and_then(|_| socket.flush());
 
-			res = res.and_then(|_| socket.write(disconnect().as_slice()));
+			let msg_buf = publish("io.m2m/sql/test/in", "{\"foo\":\"39.737567,-104.9847178\"}", AtMostOnce, false, false, None);
+			res = res.and_then(|_| socket.write(msg_buf.as_slice()));
 			res = res.and_then(|_| socket.flush());
+
+			//res = res.and_then(|_| socket.write(disconnect().as_slice()));
+			//res = res.and_then(|_| socket.flush());
 
 			match res {
 				Ok(_) => println!("success"),
 				Err(e) => println!("Test failed: {}", e)
 			};
-			//socket.close();
 		}
 	}
 
