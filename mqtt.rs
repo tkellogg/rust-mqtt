@@ -91,7 +91,8 @@ pub mod mqtt {
 									(clean as u8) << 1;
 
 			let mut buf: Vec<u8> = Vec::with_capacity(msg_len);
-			buf.push_all([0x10, 10, 0x00, 0x04, 0x4c, 0x51, 0x54, 0x54, 4, flags, msb(keep_alive), lsb(keep_alive)]);
+			let remaining_len = 10 + client_id.len() + 2;
+			buf.push_all([0x10, remaining_len as u8, 0x00, 0x04, 0x4d, 0x51, 0x54, 0x54, 4, flags, msb(keep_alive), lsb(keep_alive)]);
 
 			let client_len = client_id.len() as u16;
 			buf.push(msb(client_len));
@@ -125,6 +126,11 @@ pub mod mqtt {
 			}
 
 			buf
+		}
+
+		pub fn disconnect() -> Vec<u8> {
+			let b: u8 = 0xc0 as u8;
+			vec!(b)
 		}
 	}
 
@@ -164,7 +170,7 @@ pub mod mqtt {
 	pub mod tests {
 		use std::io::net::ip::SocketAddr;
 		use std::io::net::tcp::TcpStream;
-		use mqtt::encode::connect;
+		use mqtt::encode::{connect, disconnect};
 
 		#[test]
 		fn send_connect_msg() {
@@ -174,7 +180,11 @@ pub mod mqtt {
 			let connect_buf = connect("tim-rust", None, None, 60, true, None);
 
 			let mut res = socket.write(connect_buf.as_slice());
+			//res = res.and_then(|_| socket.flush());
+
+			res = res.and_then(|_| socket.write(disconnect().as_slice()));
 			res = res.and_then(|_| socket.flush());
+
 			match res {
 				Ok(_) => println!("success"),
 				Err(e) => println!("Test failed: {}", e)
