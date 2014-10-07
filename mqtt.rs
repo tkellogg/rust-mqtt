@@ -164,15 +164,16 @@ pub mod mqtt {
 	pub mod tests {
 		use std::io::net::ip::SocketAddr;
 		use std::io::net::tcp::TcpStream;
+		use mqtt::encode::connect;
 
 		#[test]
 		fn send_connect_msg() {
 			println!("connecting to localhost");
 			let mut socket = TcpStream::connect("127.0.0.1", 1883).unwrap();
 			println!("connected?!");
-			let connect_buf = mqtt::encode::connect("tim-rust");
+			let connect_buf = connect("tim-rust", None, None, 60, true, None);
 
-			let mut res = connect.encode(|v| socket.write(v));
+			let mut res = socket.write(connect_buf.as_slice());
 			res = res.and_then(|_| socket.flush());
 			match res {
 				Ok(_) => println!("success"),
