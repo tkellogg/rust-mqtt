@@ -1,7 +1,7 @@
 mqtt.rs
 =======
 
-This is a client for the [MQTT protocol][1] written in Rust. It is not in any way complete, not even to an experimental level. Currently compiles for Rust v0.10.
+This is a client for the [MQTT protocol][1] written in Rust. It is not in any way complete, not even to an experimental level. Currently compiles for Rust v0.11.
 
 Compiling:
 
