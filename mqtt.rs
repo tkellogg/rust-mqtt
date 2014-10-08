@@ -247,7 +247,7 @@ pub mod mqtt {
 			let mut res = socket.write(connect_buf.as_slice());
 			//res = res.and_then(|_| socket.flush());
 
-			let msg_buf = publish("io.m2m/sql/test/in", "{\"foo\":\"39.737567,-104.9847178\"}", AtMostOnce, false, false, None);
+			let msg_buf = publish("io.m2m/rust/thingy", "{\"foo\":\"39.737567,-104.9847178\"}", AtMostOnce, false, false, None);
 			res = res.and_then(|_| socket.write(msg_buf.as_slice()));
 			res = res.and_then(|_| socket.flush());
 
