@@ -39,8 +39,12 @@ pub mod mqtt {
 		retain: bool
 	}
 
+	/// Messages that can be parsed by `decode`.
 	pub enum Message {
-		Connack(u8)
+		Connack(u8),
+		PingReq,
+		PingResp,
+		Disconnect
 	}
 
 	fn parse_short(data: &[u8], index: uint) -> Option<u16> {
@@ -193,9 +197,16 @@ pub mod mqtt {
 			buf
 		}
 
+		pub fn pingreq() -> Vec<u8> {
+			use mqtt::PINGREQ;
+			let b: u8 = PINGREQ as u8;
+			vec!(b, 0 as u8)
+		}
+
 		pub fn disconnect() -> Vec<u8> {
-			let b: u8 = 0xc0 as u8;
-			vec!(b)
+			use mqtt::DISCONNECT;
+			let b: u8 = DISCONNECT as u8;
+			vec!(b, 0 as u8)
 		}
 	}
 
@@ -216,9 +227,9 @@ pub mod mqtt {
 			SUBACK => None,
 			UNSUBSCRIBE => None,
 			UNSUBACK => None,
-			PINGREQ=> None,
-			PINGRESP=> None,
-			DISCONNECT=> None
+			PINGREQ => Some(PingReq),
+			PINGRESP => Some(PingResp),
+			DISCONNECT => Some(Disconnect)
 		})
 	}
 
@@ -235,24 +246,38 @@ pub mod mqtt {
 	pub mod tests {
 		use std::io::net::tcp::TcpStream;
 		use mqtt::{AtMostOnce};
-		use mqtt::encode::{connect, disconnect, publish};
+		use mqtt::{encode, decode};
+		use std::time::duration::Duration;
+		use std::io::timer::sleep;
 
 		#[test]
 		fn send_connect_msg() {
 			println!("connecting to localhost");
 			let mut socket = TcpStream::connect("127.0.0.1", 1883).unwrap();
 			println!("connected?!");
-			let connect_buf = connect("tim-rust", None, None, 60, true, None);
+			let connect_buf = encode::connect("tim-rust", None, None, 60, true, None);
 
 			let mut res = socket.write(connect_buf.as_slice());
 			//res = res.and_then(|_| socket.flush());
 
-			let msg_buf = publish("io.m2m/rust/thingy", "{\"foo\":\"39.737567,-104.9847178\"}", AtMostOnce, false, false, None);
+			let msg_buf = encode::publish("io.m2m/rust/thingy", "{\"foo\":\"39.737567,-104.9847178\"}", AtMostOnce, false, false, None);
 			res = res.and_then(|_| socket.write(msg_buf.as_slice()));
 			res = res.and_then(|_| socket.flush());
 
-			//res = res.and_then(|_| socket.write(disconnect().as_slice()));
-			//res = res.and_then(|_| socket.flush());
+			let d = Duration::milliseconds(250);
+			sleep(d);
+
+			let mut buf = Vec::with_capacity(2);
+			socket.read(buf.as_mut_slice());
+			let connack = decode(buf.as_slice());
+
+			res = res.and_then(|_| socket.write(encode::pingreq().as_slice()));
+			res = res.and_then(|_| socket.flush());
+
+			sleep(d);
+
+			res = res.and_then(|_| socket.write(encode::disconnect().as_slice()));
+			res = res.and_then(|_| socket.flush());
 
 			match res {
 				Ok(_) => println!("success"),
