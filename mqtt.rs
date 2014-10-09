@@ -199,13 +199,13 @@ pub mod mqtt {
 
 		pub fn pingreq() -> Vec<u8> {
 			use mqtt::PINGREQ;
-			let b: u8 = PINGREQ as u8;
+			let b: u8 = (PINGREQ as u8) << 4;
 			vec!(b, 0 as u8)
 		}
 
 		pub fn disconnect() -> Vec<u8> {
 			use mqtt::DISCONNECT;
-			let b: u8 = DISCONNECT as u8;
+			let b: u8 = (DISCONNECT as u8) << 4;
 			vec!(b, 0 as u8)
 		}
 	}
