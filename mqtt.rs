@@ -197,6 +197,31 @@ pub mod mqtt {
 			buf
 		}
 
+		pub fn subscribe(topic: &str, qos: QoS, msg_id: u16) -> Vec<u8> {
+			use mqtt::SUBSCRIBE;
+			let remaining_len = 5 + topic.len();
+			let buf_len = 1 + rlen_size(remaining_len) + remaining_len as uint;
+			let mut buf: Vec<u8> = Vec::with_capacity(buf_len);
+
+			let fixed: u8 = ((SUBSCRIBE as u8) << 4) | 2;
+			buf.push(fixed);
+
+			rlen(&mut buf, remaining_len as u32);
+
+			// packet ID
+			buf.push(msb(msg_id));
+			buf.push(lsb(msg_id));
+
+			let topic_len = topic.len() as u16;
+			buf.push(msb(topic_len));
+			buf.push(lsb(topic_len));
+			buf.push_all(topic.as_bytes());
+
+			buf.push(qos as u8);
+
+			buf
+		}
+
 		pub fn pingreq() -> Vec<u8> {
 			use mqtt::PINGREQ;
 			let b: u8 = (PINGREQ as u8) << 4;
@@ -272,6 +297,11 @@ pub mod mqtt {
 			let connack = decode(buf.as_slice());
 
 			res = res.and_then(|_| socket.write(encode::pingreq().as_slice()));
+			res = res.and_then(|_| socket.flush());
+
+			sleep(d);
+
+			res = res.and_then(|_| socket.write(encode::subscribe("io.m2m/rust/y", AtMostOnce, 1).as_slice()));
 			res = res.and_then(|_| socket.flush());
 
 			sleep(d);
