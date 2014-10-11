@@ -40,12 +40,15 @@ pub mod mqtt {
 	}
 
 	/// Messages that can be parsed by `decode`.
-	pub enum Message {
+	pub enum Message<'a> {
 		Connack(u8),
+		SubAck(Vec<(SubAckCode, &'a str)>),
 		PingReq,
 		PingResp,
 		Disconnect
 	}
+
+	pub enum SubAckCode { SubAckSuccess(QoS), SubAckFailure }
 
 	fn parse_short(data: &[u8], index: uint) -> Option<u16> {
 		let b1 = data.get(index).and_then(|x| x.to_u16());
@@ -249,7 +252,7 @@ pub mod mqtt {
 			PUBREL => None,
 			PUBCOMP => None,
 			SUBSCRIBE => None,
-			SUBACK => None,
+			SUBACK => parse_suback(data),
 			UNSUBSCRIBE => None,
 			UNSUBACK => None,
 			PINGREQ => Some(PingReq),
@@ -265,6 +268,24 @@ pub mod mqtt {
 			_ => None
 		});
 		ret_code.and_then(|r| Some(Connack(*r)))
+	}
+
+	fn parse_suback(data: &[u8]) -> Option<Message> {
+		use mqtt::AtMostOnce;
+		use std::str;
+		let _ = parse_short(data, 1); // msg_id
+		let mut i = 3;
+		let mut pairs: Vec<(SubAckCode, &str)> = Vec::with_capacity(1);
+		while i < data.len() {
+			let str_len = parse_short(data, i).unwrap_or(0) as uint;
+			let topic = str::from_utf8(data.slice(i + 2, i + 2 + str_len)).unwrap_or("");
+			let ret_code = data.get(i + 3 + str_len).map_or(SubAckFailure, |c| {
+				let qos = FromPrimitive::from_u8(*c);
+				SubAckSuccess(qos.unwrap_or(AtMostOnce))
+			});
+			pairs.push((ret_code, topic));
+		}
+		Some(SubAck(pairs))
 	}
 
 	#[cfg(test)]
@@ -289,7 +310,7 @@ pub mod mqtt {
 			res = res.and_then(|_| socket.write(msg_buf.as_slice()));
 			res = res.and_then(|_| socket.flush());
 
-			let d = Duration::milliseconds(250);
+			let d = Duration::milliseconds(10);
 			sleep(d);
 
 			let mut buf = Vec::with_capacity(2);
@@ -305,6 +326,10 @@ pub mod mqtt {
 			res = res.and_then(|_| socket.flush());
 
 			sleep(d);
+
+			let mut buf2 = Vec::with_capacity(18);
+			socket.read(buf2.as_mut_slice());
+			let suback = decode(buf2.as_slice());
 
 			res = res.and_then(|_| socket.write(encode::disconnect().as_slice()));
 			res = res.and_then(|_| socket.flush());
