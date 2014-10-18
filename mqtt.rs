@@ -42,7 +42,7 @@ pub mod mqtt {
 	/// Messages that can be parsed by `decode`.
 	pub enum Message<'a> {
 		Connack(u8),
-		SubAck(Vec<(SubAckCode, &'a str)>),
+		SubAck(Box<Vec<(SubAckCode, Box<&'a str>)>>),
 		PingReq,
 		PingResp,
 		Disconnect
@@ -275,10 +275,10 @@ pub mod mqtt {
 		use std::str;
 		let _ = parse_short(data, 1); // msg_id
 		let mut i = 3;
-		let mut pairs: Vec<(SubAckCode, &str)> = Vec::with_capacity(1);
+		let mut pairs: Box<Vec<(SubAckCode, Box<&str>)>> = box Vec::with_capacity(1);
 		while i < data.len() {
 			let str_len = parse_short(data, i).unwrap_or(0) as uint;
-			let topic = str::from_utf8(data.slice(i + 2, i + 2 + str_len)).unwrap_or("");
+			let topic = box str::from_utf8(data.slice(i + 2, i + 2 + str_len)).unwrap_or("");
 			let ret_code = data.get(i + 3 + str_len).map_or(SubAckFailure, |c| {
 				let qos = FromPrimitive::from_u8(*c);
 				SubAckSuccess(qos.unwrap_or(AtMostOnce))
@@ -291,7 +291,7 @@ pub mod mqtt {
 	#[cfg(test)]
 	pub mod tests {
 		use std::io::net::tcp::TcpStream;
-		use mqtt::{AtMostOnce};
+		use mqtt::{AtMostOnce, SubAck, SubAckSuccess};
 		use mqtt::{encode, decode};
 		use std::time::duration::Duration;
 		use std::io::timer::sleep;
@@ -330,6 +330,10 @@ pub mod mqtt {
 			let mut buf2 = Vec::with_capacity(18);
 			socket.read(buf2.as_mut_slice());
 			let suback = decode(buf2.as_slice());
+			/*match suback {
+				Some(SubAck([(SubAckSuccess(AtMostOnce), _)])) => (),
+				_ => fail!("Was not successful")
+			}*/
 
 			res = res.and_then(|_| socket.write(encode::disconnect().as_slice()));
 			res = res.and_then(|_| socket.flush());
