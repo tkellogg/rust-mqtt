@@ -2,6 +2,7 @@
 #![desc = "An Message Queue Telemetry Transport (MQTT) client"]
 #![crate_type = "lib"]
 #![feature(struct_variant)]
+#![feature(if_let)]
 
 
 pub mod mqtt {
@@ -330,10 +331,17 @@ pub mod mqtt {
 			let mut buf2 = Vec::with_capacity(18);
 			socket.read(buf2.as_mut_slice());
 			let suback = decode(buf2.as_slice());
-			/*match suback {
-				Some(SubAck([(SubAckSuccess(AtMostOnce), _)])) => (),
+			match suback {
+				Some(SubAck(subs)) => {
+					assert_eq!(subs.len(), 1);
+					if let &(SubAckSuccess(qos), ref topic) = (*subs).get(0) {
+						assert_eq!(*topic, box "io.m2m/rust/y");
+					} else {
+						fail!("was not success");
+					}
+				},
 				_ => fail!("Was not successful")
-			}*/
+			}
 
 			res = res.and_then(|_| socket.write(encode::disconnect().as_slice()));
 			res = res.and_then(|_| socket.flush());
