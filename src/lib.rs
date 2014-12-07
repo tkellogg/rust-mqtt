@@ -1,6 +1,3 @@
-#![crate_name = "mqtt"]
-#![desc = "An Message Queue Telemetry Transport (MQTT) client"]
-#![crate_type = "lib"]
 #![feature(globs)]
 
 
@@ -303,8 +300,6 @@ pub mod mqtt {
 	}
 
 	fn parse_suback(data: &[u8]) -> Option<Message> {
-		use std::str;
-
 		let (index, remaining_length) = parse_rlen(data, 1); // msg_id
 		parse_short(data, index); // msg_id
 		let rlen = remaining_length + index;
