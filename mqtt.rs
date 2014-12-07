@@ -9,6 +9,7 @@ pub mod mqtt {
 	
 	#[deriving(FromPrimitive)] 
 	#[deriving(Show)]
+	#[deriving(PartialEq)]
 	pub enum QoS { 
 		AtMostOnce = 0, 
 		AtLeastOnce = 1, 
@@ -17,6 +18,7 @@ pub mod mqtt {
 
 	#[deriving(FromPrimitive)] 
 	#[deriving(Show)]
+	#[deriving(PartialEq)]
 	pub enum MessageType {
 		// Can an owned box reside on the stack? I don't think you can have a barrowed ptr in a struct.
 		CONNECT = 1,
@@ -43,14 +45,16 @@ pub mod mqtt {
 	}
 
 	/// Messages that can be parsed by `decode`.
+	#[deriving(PartialEq)]
 	pub enum Message<'a> {
 		Connack(u8),
-		SubAck(Box<Vec<(SubAckCode, Box<&'a str>)>>),
+		SubAck(Box<Vec<SubAckCode>>),
 		PingReq,
 		PingResp,
 		Disconnect
 	}
 
+	#[deriving(PartialEq)]
 	pub enum SubAckCode { SubAckSuccess(QoS), SubAckFailure }
 
 	fn parse_short(data: &[u8], index: uint) -> Option<u16> {
@@ -296,26 +300,28 @@ pub mod mqtt {
 	fn parse_suback(data: &[u8]) -> Option<Message> {
 		use mqtt::AtMostOnce;
 		use std::str;
+
 		let (index, remaining_length) = parse_rlen(data, 1); // msg_id
+		parse_short(data, index); // msg_id
 		let rlen = remaining_length + index;
-		let mut i = index;
-		let mut pairs: Box<Vec<(SubAckCode, Box<&str>)>> = box Vec::with_capacity(1);
+		
+		let mut i = index + 2;
+		let mut codes: Box<Vec<SubAckCode>> = box Vec::with_capacity(remaining_length);
 		while i < rlen {
-			let str_len = parse_short(data, i).unwrap_or(0) as uint;
-			let topic = box str::from_utf8(data.slice(i + 2, i + 2 + str_len)).unwrap_or("");
-			let ret_code = data.get(i + 3 + str_len).map_or(SubAckFailure, |c| {
+			let ret_code = data.get(i).map_or(SubAckFailure, |c| {
 				let qos = FromPrimitive::from_u8(*c);
 				SubAckSuccess(qos.unwrap_or(AtMostOnce))
 			});
-			pairs.push((ret_code, topic));
+			codes.push(ret_code);
+			i += 1;
 		}
-		Some(SubAck(pairs))
+		Some(SubAck(codes))
 	}
 
 	#[cfg(test)]
 	pub mod tests {
 		use std::io::TcpStream;
-		use mqtt::{AtMostOnce, Connack, SubAck, SubAckSuccess};
+		use mqtt::{AtMostOnce, Connack, SubAck, SubAckSuccess, PingResp};
 		use mqtt::{encode, decode};
 		use std::time::duration::Duration;
 		use std::io::timer::sleep;
@@ -358,6 +364,12 @@ pub mod mqtt {
 
 			sleep(d);
 
+			let mut ping_buf = [0, 4];
+			match socket_readable.read(ping_buf) {
+				Ok(len) => assert!(decode(ping_buf.slice_to(len)) == Some(PingResp)),
+				Err(e) => fail!("Couldn't read e: {}", e)
+			};
+
 			res = res.and_then(|_| socket.write(encode::subscribe("io.m2m/rust/y", AtMostOnce, 1).as_slice()));
 			res = res.and_then(|_| socket.flush());
 
@@ -371,11 +383,7 @@ pub mod mqtt {
 					match suback {
 						Some(SubAck(subs)) => {
 							assert_eq!(subs.len(), 1);
-							if let &(SubAckSuccess(qos), ref topic) = (*subs).get(0) {
-								assert_eq!(*topic, box "io.m2m/rust/y");
-							} else {
-								fail!("was not success");
-							}
+							assert!(*(*subs).get(0) == SubAckSuccess(AtMostOnce));
 						},
 						Some(other) => fail!("Expected SUBACK"),
 							
