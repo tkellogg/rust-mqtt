@@ -1,8 +1,7 @@
 #![crate_name = "mqtt"]
 #![desc = "An Message Queue Telemetry Transport (MQTT) client"]
 #![crate_type = "lib"]
-#![feature(struct_variant)]
-#![feature(if_let)]
+#![feature(globs)]
 
 
 pub mod mqtt {
@@ -163,7 +162,7 @@ pub mod mqtt {
 
 			let mut buf: Vec<u8> = Vec::with_capacity(msg_len);
 			let remaining_len = 10 + client_id.len() + 2;
-			buf.push_all([0x10, remaining_len as u8, 0x00, 0x04, 0x4d, 0x51, 0x54, 0x54, 4, flags, msb(keep_alive), lsb(keep_alive)]);
+			buf.push_all(&[0x10, remaining_len as u8, 0x00, 0x04, 0x4d, 0x51, 0x54, 0x54, 4, flags, msb(keep_alive), lsb(keep_alive)]);
 
 			let client_len = client_id.len() as u16;
 			buf.push(msb(client_len));
@@ -227,12 +226,13 @@ pub mod mqtt {
 		}
 
 		pub fn subscribe(topic: &str, qos: QoS, msg_id: u16) -> Vec<u8> {
-			use mqtt::SUBSCRIBE;
+			use mqtt::MessageType;
+
 			let remaining_len = 5 + topic.len();
 			let buf_len = 1 + rlen_size(remaining_len) + remaining_len as uint;
 			let mut buf: Vec<u8> = Vec::with_capacity(buf_len);
 
-			let fixed: u8 = ((SUBSCRIBE as u8) << 4) | 2;
+			let fixed: u8 = ((MessageType::SUBSCRIBE as u8) << 4) | 2;
 			buf.push(fixed);
 
 			rlen(&mut buf, remaining_len as u32);
@@ -252,13 +252,13 @@ pub mod mqtt {
 		}
 
 		pub fn pingreq() -> Vec<u8> {
-			use mqtt::PINGREQ;
+			use mqtt::MessageType::PINGREQ;
 			let b: u8 = (PINGREQ as u8) << 4;
 			vec!(b, 0 as u8)
 		}
 
 		pub fn disconnect() -> Vec<u8> {
-			use mqtt::DISCONNECT;
+			use mqtt::MessageType::DISCONNECT;
 			let b: u8 = (DISCONNECT as u8) << 4;
 			vec!(b, 0 as u8)
 		}
@@ -267,6 +267,9 @@ pub mod mqtt {
 	// 987326 Tuesday 8-10am
 
 	pub fn decode(data: &[u8]) -> Option<Message> {
+		use mqtt::Message;
+		use mqtt::MessageType::*;
+
 		let hd = data.head();
 		let msg: Option<MessageType> = hd.and_then(|x| FromPrimitive::from_u8(*x >> 4));
 		println!("Decoding a message: {} bytes, data[0] ({}), msg ({})", data.len(), hd, msg);
@@ -282,23 +285,24 @@ pub mod mqtt {
 			SUBACK => parse_suback(data),
 			UNSUBSCRIBE => None,
 			UNSUBACK => None,
-			PINGREQ => Some(PingReq),
-			PINGRESP => Some(PingResp),
-			DISCONNECT => Some(Disconnect)
+			PINGREQ => Some(Message::PingReq),
+			PINGRESP => Some(Message::PingResp),
+			DISCONNECT => Some(Message::Disconnect)
 		})
 	}
 
 	fn parse_connack(data: &[u8]) -> Option<Message> {
+		use mqtt::Message;
+
 		let (index, remaining_length) = parse_rlen(data, 1);
 		let ret_code = match remaining_length {
 			2 => data.get(index),
 			_ => None
 		};
-		ret_code.and_then(|r| Some(Connack(*r)))
+		ret_code.and_then(|r| Some(Message::Connack(*r)))
 	}
 
 	fn parse_suback(data: &[u8]) -> Option<Message> {
-		use mqtt::AtMostOnce;
 		use std::str;
 
 		let (index, remaining_length) = parse_rlen(data, 1); // msg_id
@@ -308,21 +312,20 @@ pub mod mqtt {
 		let mut i = index + 2;
 		let mut codes: Box<Vec<SubAckCode>> = box Vec::with_capacity(remaining_length);
 		while i < rlen {
-			let ret_code = data.get(i).map_or(SubAckFailure, |c| {
+			let ret_code = data.get(i).map_or(SubAckCode::SubAckFailure, |c| {
 				let qos = FromPrimitive::from_u8(*c);
-				SubAckSuccess(qos.unwrap_or(AtMostOnce))
+				SubAckCode::SubAckSuccess(qos.unwrap_or(QoS::AtMostOnce))
 			});
 			codes.push(ret_code);
 			i += 1;
 		}
-		Some(SubAck(codes))
+		Some(Message::SubAck(codes))
 	}
 
 	#[cfg(test)]
 	pub mod tests {
 		use std::io::TcpStream;
-		use mqtt::{AtMostOnce, Connack, SubAck, SubAckSuccess, PingResp};
-		use mqtt::{encode, decode};
+		use mqtt::{encode, decode, Message, QoS, SubAckCode};
 		use std::time::duration::Duration;
 		use std::io::timer::sleep;
 
@@ -330,7 +333,7 @@ pub mod mqtt {
 		fn send_connect_msg() {
 			let d = Duration::milliseconds(10);
 
-			let mut socket = TcpStream::connect("127.0.0.1", 1883).unwrap();
+			let mut socket = TcpStream::connect("127.0.0.1:1883").unwrap();
 			let mut socket_readable = socket.clone();
 
 			let connect_buf = encode::connect("tim-rust", None, None, 60, true, None);
@@ -345,15 +348,15 @@ pub mod mqtt {
 				Ok(len) => {
 					println!("{} bytes read, buf.len() == {}", len, buf.len());
 					match decode(buf.slice_to(len)) {
-						Some(Connack(code)) => println!("Connected with code '{}'", code),
+						Some(Message::Connack(code)) => println!("Connected with code '{}'", code),
 						Some(other) => println!("Not CONACK"),
-						_ => fail!("CONACK was not returned")
+						_ => panic!("CONACK was not returned")
 					};
 				},
 				Err(e) => println!("Couldn't read CONACK becase '{}'", e)
 			};
 
-			let msg_buf = encode::publish("io.m2m/rust/thingy", "{\"foo\":\"39.737567,-104.9847178\"}", AtMostOnce, false, false, None);
+			let msg_buf = encode::publish("io.m2m/rust/thingy", "{\"foo\":\"39.737567,-104.9847178\"}", QoS::AtMostOnce, false, false, None);
 			res = res.and_then(|_| socket.write(msg_buf.as_slice()));
 			println!("Write publish: {}", res);
 			res = res.and_then(|_| socket.flush());
@@ -364,33 +367,33 @@ pub mod mqtt {
 
 			sleep(d);
 
-			let mut ping_buf = [0, 4];
-			match socket_readable.read(ping_buf) {
-				Ok(len) => assert!(decode(ping_buf.slice_to(len)) == Some(PingResp)),
-				Err(e) => fail!("Couldn't read e: {}", e)
+			let mut ping_buf = [0 as u8, 4];
+			match socket_readable.read(ping_buf.as_mut_slice()) {
+				Ok(len) => assert!(decode(ping_buf.slice_to(len)) == Some(Message::PingResp)),
+				Err(e) => panic!("Couldn't read e: {}", e)
 			};
 
-			res = res.and_then(|_| socket.write(encode::subscribe("io.m2m/rust/y", AtMostOnce, 1).as_slice()));
+			res = res.and_then(|_| socket.write(encode::subscribe("io.m2m/rust/y", QoS::AtMostOnce, 1).as_slice()));
 			res = res.and_then(|_| socket.flush());
 
 			sleep(d);
 
 			let mut buf2 = [0, ..1024];
-			match socket_readable.read(buf2) {
+			match socket_readable.read(buf2.as_mut_slice()) {
 				Ok(len) => {
 					println!("Decode SUBACK!");
 					let suback = decode(buf2.slice_to(len));
 					match suback {
-						Some(SubAck(subs)) => {
+						Some(Message::SubAck(subs)) => {
 							assert_eq!(subs.len(), 1);
-							assert!(*(*subs).get(0) == SubAckSuccess(AtMostOnce));
+							assert!((*subs).get(0) == Some(&SubAckCode::SubAckSuccess(QoS::AtMostOnce)));
 						},
-						Some(other) => fail!("Expected SUBACK"),
+						Some(other) => panic!("Expected SUBACK"),
 							
-						_ => fail!("Was not successful")
+						_ => panic!("Was not successful")
 					}
 				},
-				Err(e) => fail!("Couldn't read SUBACK because '{}'", e)
+				Err(e) => panic!("Couldn't read SUBACK because '{}'", e)
 			};
 
 			res = res.and_then(|_| socket.write(encode::disconnect().as_slice()));
