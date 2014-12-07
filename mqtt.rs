@@ -8,6 +8,7 @@
 pub mod mqtt {
 	
 	#[deriving(FromPrimitive)] 
+	#[deriving(Show)]
 	pub enum QoS { 
 		AtMostOnce = 0, 
 		AtLeastOnce = 1, 
@@ -15,6 +16,7 @@ pub mod mqtt {
 	}
 
 	#[deriving(FromPrimitive)] 
+	#[deriving(Show)]
 	pub enum MessageType {
 		// Can an owned box reside on the stack? I don't think you can have a barrowed ptr in a struct.
 		CONNECT = 1,
@@ -57,6 +59,25 @@ pub mod mqtt {
 		b1.and_then(|x| b2.map(|y| {
 			(x << 8) | y
 		}))
+	}
+
+	fn parse_rlen(data: &[u8], index: uint) -> (uint, uint) {
+		match data.get(index) {
+			Some(&a) if a < 128 => (index + 1, a as uint),
+			Some(&a) => match data.get(index + 1) {
+				Some(&b) if b < 128 => (index + 2, ((a as uint) << 8) | (b as uint)),
+				Some(&b) => match data.get(index + 2) {
+					Some(&c) if b < 128 => (index + 3, ((a as uint) << 15) | ((b as uint) << 8) | (c as uint)),
+					Some(&c) => match data.get(index + 3) {
+						Some(&d) => (index + 4, ((a as uint) << 22) | ((b as uint) << 15) | ((c as uint) << 8) | (d as uint)),
+						None => (index, 0)
+					},
+					None => (index, 0)
+				},
+				None => (index, 0)
+			},
+			None => (index, 0)
+		}
 	}
 
 	pub mod encode {
@@ -243,7 +264,8 @@ pub mod mqtt {
 
 	pub fn decode(data: &[u8]) -> Option<Message> {
 		let hd = data.head();
-		let msg: Option<MessageType> = hd.and_then(|x| FromPrimitive::from_u8(*x));
+		let msg: Option<MessageType> = hd.and_then(|x| FromPrimitive::from_u8(*x >> 4));
+		println!("Decoding a message: {} bytes, data[0] ({}), msg ({})", data.len(), hd, msg);
 		msg.and_then(|x| match x {
 			CONNECT => None,
 			CONNACK => parse_connack(data),
@@ -263,21 +285,22 @@ pub mod mqtt {
 	}
 
 	fn parse_connack(data: &[u8]) -> Option<Message> {
-		let remaining_length = parse_short(data, 1);
-		let ret_code = remaining_length.and_then(|x| match x {
-			2 => data.get(4),
+		let (index, remaining_length) = parse_rlen(data, 1);
+		let ret_code = match remaining_length {
+			2 => data.get(index),
 			_ => None
-		});
+		};
 		ret_code.and_then(|r| Some(Connack(*r)))
 	}
 
 	fn parse_suback(data: &[u8]) -> Option<Message> {
 		use mqtt::AtMostOnce;
 		use std::str;
-		let _ = parse_short(data, 1); // msg_id
-		let mut i = 3;
+		let (index, remaining_length) = parse_rlen(data, 1); // msg_id
+		let rlen = remaining_length + index;
+		let mut i = index;
 		let mut pairs: Box<Vec<(SubAckCode, Box<&str>)>> = box Vec::with_capacity(1);
-		while i < data.len() {
+		while i < rlen {
 			let str_len = parse_short(data, i).unwrap_or(0) as uint;
 			let topic = box str::from_utf8(data.slice(i + 2, i + 2 + str_len)).unwrap_or("");
 			let ret_code = data.get(i + 3 + str_len).map_or(SubAckFailure, |c| {
@@ -291,32 +314,44 @@ pub mod mqtt {
 
 	#[cfg(test)]
 	pub mod tests {
-		use std::io::net::tcp::TcpStream;
-		use mqtt::{AtMostOnce, SubAck, SubAckSuccess};
+		use std::io::TcpStream;
+		use mqtt::{AtMostOnce, Connack, SubAck, SubAckSuccess};
 		use mqtt::{encode, decode};
 		use std::time::duration::Duration;
 		use std::io::timer::sleep;
 
 		#[test]
 		fn send_connect_msg() {
-			println!("connecting to localhost");
+			let d = Duration::milliseconds(10);
+
 			let mut socket = TcpStream::connect("127.0.0.1", 1883).unwrap();
-			println!("connected?!");
+			let mut socket_readable = socket.clone();
+
 			let connect_buf = encode::connect("tim-rust", None, None, 60, true, None);
 
 			let mut res = socket.write(connect_buf.as_slice());
-			//res = res.and_then(|_| socket.flush());
+			res = res.and_then(|_| socket.flush());
+
+			//sleep(d);
+
+			let mut buf = [0, ..1024];
+			match socket_readable.read(buf.as_mut_slice()) {
+				Ok(len) => {
+					println!("{} bytes read, buf.len() == {}", len, buf.len());
+					match decode(buf.slice_to(len)) {
+						Some(Connack(code)) => println!("Connected with code '{}'", code),
+						Some(other) => println!("Not CONACK"),
+						_ => fail!("CONACK was not returned")
+					};
+				},
+				Err(e) => println!("Couldn't read CONACK becase '{}'", e)
+			};
 
 			let msg_buf = encode::publish("io.m2m/rust/thingy", "{\"foo\":\"39.737567,-104.9847178\"}", AtMostOnce, false, false, None);
 			res = res.and_then(|_| socket.write(msg_buf.as_slice()));
+			println!("Write publish: {}", res);
 			res = res.and_then(|_| socket.flush());
-
-			let d = Duration::milliseconds(10);
-			sleep(d);
-
-			let mut buf = Vec::with_capacity(2);
-			socket.read(buf.as_mut_slice());
-			let connack = decode(buf.as_slice());
+			println!("Flush: {}", res);
 
 			res = res.and_then(|_| socket.write(encode::pingreq().as_slice()));
 			res = res.and_then(|_| socket.flush());
@@ -328,20 +363,27 @@ pub mod mqtt {
 
 			sleep(d);
 
-			let mut buf2 = Vec::with_capacity(18);
-			socket.read(buf2.as_mut_slice());
-			let suback = decode(buf2.as_slice());
-			match suback {
-				Some(SubAck(subs)) => {
-					assert_eq!(subs.len(), 1);
-					if let &(SubAckSuccess(qos), ref topic) = (*subs).get(0) {
-						assert_eq!(*topic, box "io.m2m/rust/y");
-					} else {
-						fail!("was not success");
+			let mut buf2 = [0, ..1024];
+			match socket_readable.read(buf2) {
+				Ok(len) => {
+					println!("Decode SUBACK!");
+					let suback = decode(buf2.slice_to(len));
+					match suback {
+						Some(SubAck(subs)) => {
+							assert_eq!(subs.len(), 1);
+							if let &(SubAckSuccess(qos), ref topic) = (*subs).get(0) {
+								assert_eq!(*topic, box "io.m2m/rust/y");
+							} else {
+								fail!("was not success");
+							}
+						},
+						Some(other) => fail!("Expected SUBACK"),
+							
+						_ => fail!("Was not successful")
 					}
 				},
-				_ => fail!("Was not successful")
-			}
+				Err(e) => fail!("Couldn't read SUBACK because '{}'", e)
+			};
 
 			res = res.and_then(|_| socket.write(encode::disconnect().as_slice()));
 			res = res.and_then(|_| socket.flush());
