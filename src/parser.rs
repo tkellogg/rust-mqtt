@@ -28,6 +28,7 @@ pub enum MessageType {
 	DISCONNECT = 14
 }
 
+#[deriving(Show)]
 pub struct LastWill {
 	topic: Box<str>,
 	msg: Box<str>,
@@ -36,8 +37,8 @@ pub struct LastWill {
 }
 
 /// Messages that can be parsed by `decode`.
-#[deriving(PartialEq)]
-pub enum Message<'a> {
+#[deriving(PartialEq, Show)]
+pub enum Message {
 	Connack(u8),
 	SubAck(Box<Vec<SubAckCode>>),
 	PingReq,
@@ -45,7 +46,7 @@ pub enum Message<'a> {
 	Disconnect
 }
 
-#[deriving(PartialEq)]
+#[deriving(PartialEq, Show)]
 pub enum SubAckCode { SubAckSuccess(QoS), SubAckFailure }
 
 fn parse_short(data: &[u8], index: uint) -> Option<u16> {
