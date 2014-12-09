@@ -2,12 +2,18 @@ extern crate mqtt;
 
 use std::default::Default;
 use mqtt::client::{Client, ConnectOptions};
-use mqtt::parser::{Message};
+use mqtt::parser::{Message, QoS};
 
 #[test]
 fn connect_to_broker() {
 	connect();
 	()
+}
+
+#[test]
+fn blind_publish() {
+	let mut client = connect();
+	client.publish("foo/bar", "test message", QoS::AtMostOnce, false, false);
 }
 
 fn connect<'a>() -> Client<'a> {

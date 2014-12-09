@@ -1,5 +1,5 @@
 use std::io::{TcpStream, IoError};
-use parser::{LastWill, Message, encode, decode};
+use parser::{LastWill, Message, encode, decode, QoS};
 
 #[deriving(Show, PartialEq, FromPrimitive)]
 pub enum ConnectError { WrongProtocolVersion = 1, IdentifierRejected = 2, ServerUnavailable = 3,
@@ -28,6 +28,16 @@ pub struct Client<'a> {
 }
 
 impl<'a> Client<'a> {
+
+	pub fn is_connected(&self) -> bool { self.stream.is_some() }
+
+	fn next_id(&mut self) -> u16 {
+		self.last_id += 1;
+		self.last_id
+	}
+
+	/// Synchronously connect to the MQTT broker using the options set during creation of
+	/// the Client struct.
 	pub fn connect(&'a mut self) -> Result<(), MqttError> {
 		match TcpStream::connect(self.options.host_port) {
 			Ok(stream) => {
@@ -40,7 +50,7 @@ impl<'a> Client<'a> {
 																	self.options.clean, 
 																	self.options.lwt);
 
-				self.stream.as_mut().map(|x| (*x).write(buf.as_slice()));
+				self.write(buf.as_slice());
 
 				match self.recv() {
 					Ok(Message::Connack(0)) => Ok(()),
@@ -54,6 +64,14 @@ impl<'a> Client<'a> {
 				}
 			},
 			Err(e) => Err(MqttError::BrokenIO(e))
+		}
+	}
+
+	fn write(&mut self, buf: &[u8]) -> Result<(), MqttError> {
+		match self.stream.as_mut().map(|x| (*x).write(buf.as_slice())) {
+			Some(Err(e)) => Err(MqttError::BrokenIO(e)),
+			Some(Ok(res)) => Ok(res),
+			None => Err(MqttError::NoConnection)
 		}
 	}
 
@@ -80,6 +98,17 @@ impl<'a> Client<'a> {
 			},
 			None => Err(MqttError::NoConnection)
 		}
+	}
+
+	pub fn publish(&mut self, topic: &str, msg: &str, qos: QoS, retained: bool, dup: bool) -> Result<(), MqttError> {
+		let id = match qos {
+			QoS::AtMostOnce => None,
+			_ => Some(self.next_id())
+		};
+
+		let buf = encode::publish(topic, msg, qos, retained, dup, id);
+
+		self.write(buf.as_slice())
 	}
 }
 

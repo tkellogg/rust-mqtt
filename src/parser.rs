@@ -1,10 +1,14 @@
-#[deriving(FromPrimitive)] 
-#[deriving(Show)]
-#[deriving(PartialEq)]
+use std::default::Default;
+
+#[deriving(PartialEq, Show, FromPrimitive)]
 pub enum QoS { 
 	AtMostOnce = 0, 
 	AtLeastOnce = 1, 
 	ExactlyOnce = 2
+}
+
+impl Default for QoS {
+	fn default() -> QoS { QoS::AtMostOnce }
 }
 
 #[deriving(FromPrimitive)] 
