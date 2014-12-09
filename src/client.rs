@@ -28,7 +28,7 @@ pub struct Client<'a> {
 }
 
 impl<'a> Client<'a> {
-	pub fn connect(&'a mut self) -> Result<Message, MqttError> {
+	pub fn connect(&'a mut self) -> Result<(), MqttError> {
 		match TcpStream::connect(self.options.host_port) {
 			Ok(stream) => {
 				self.stream = Some(stream);
@@ -43,7 +43,7 @@ impl<'a> Client<'a> {
 				self.stream.as_mut().map(|x| (*x).write(buf.as_slice()));
 
 				match self.recv() {
-					Ok(Message::Connack(0)) => Ok(Message::Connack(0)),
+					Ok(Message::Connack(0)) => Ok(()),
 					Ok(Message::Connack(failure)) => {
 						let codeOpt: Option<ConnectError> = FromPrimitive::from_u8(failure);
 						let code = codeOpt.unwrap_or(ConnectError::OtherError);
