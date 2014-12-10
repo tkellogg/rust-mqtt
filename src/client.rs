@@ -110,5 +110,7 @@ impl<'a> Client<'a> {
 
 		self.write(buf.as_slice())
 	}
+
+	//pub fn subscribe(&mut self, subscriptions: Vec<(&str, QoS)>) { }
 }
 
