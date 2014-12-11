@@ -111,6 +111,10 @@ impl<'a> Client<'a> {
 		self.write(buf.as_slice())
 	}
 
-	//pub fn subscribe(&mut self, subscriptions: Vec<(&str, QoS)>) { }
+	pub fn subscribe(&mut self, subscriptions: Vec<(&str, QoS)>) -> Result<(), MqttError> { 
+		let id = self.next_id();
+		let buf = encode::subscribe(subscriptions, id);
+		self.write(buf.as_slice())
+	}
 }
 

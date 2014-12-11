@@ -49,7 +49,7 @@ fn send_connect_msg() {
 		Err(e) => panic!("Couldn't read e: {}", e)
 	};
 
-	res = res.and_then(|_| socket.write(encode::subscribe("io.m2m/rust/y", QoS::AtMostOnce, 1).as_slice()));
+	res = res.and_then(|_| socket.write(encode::subscribe(vec![("io.m2m/rust/y", QoS::AtMostOnce)], 1).as_slice()));
 	res = res.and_then(|_| socket.flush());
 
 	sleep(d);
