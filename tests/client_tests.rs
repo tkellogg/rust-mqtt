@@ -24,7 +24,14 @@ fn subscribe_and_receive_suback() {
 
 	match client.recv() {
 		Ok(Message::SubAck(_)) => (),
-		Ok(m) => panic!("Wrong kind of message"),
+		Ok(_) => panic!("Not a SUBSCRIBE"),
+		Err(e) => panic!(e)
+	};
+
+	assert_ok(client.unsubscribe(vec!["foo/bar"]));
+	match client.recv() {
+		Ok(Message::UnsubAck) => (),
+		Ok(_) => panic!("Not an UNSUBSCRIBE"),
 		Err(e) => panic!(e)
 	}
 }

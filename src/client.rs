@@ -67,6 +67,8 @@ impl<'a> Client<'a> {
 		}
 	}
 
+	/// Cleanly end the MQTT session. Always do this unless you unexpectedly crash and
+	/// need to receive missed QoS > 0 messages.
 	pub fn disconnect(&'a mut self) -> Result<(), MqttError> {
 		let buf = encode::disconnect();
 		self.write(buf.as_slice())
@@ -119,6 +121,12 @@ impl<'a> Client<'a> {
 	pub fn subscribe(&mut self, subscriptions: Vec<(&str, QoS)>) -> Result<(), MqttError> { 
 		let id = self.next_id();
 		let buf = encode::subscribe(subscriptions, id);
+		self.write(buf.as_slice())
+	}
+
+	pub fn unsubscribe(&mut self, topics: Vec<&str>) -> Result<(), MqttError> {
+		let id = self.next_id();
+		let buf = encode::unsubscribe(topics, id);
 		self.write(buf.as_slice())
 	}
 }

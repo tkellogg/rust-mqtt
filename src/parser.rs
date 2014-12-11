@@ -45,6 +45,7 @@ pub struct LastWill {
 pub enum Message {
 	Connack(u8),
 	SubAck(Box<Vec<SubAckCode>>),
+	UnsubAck,
 	PingReq,
 	PingResp,
 	Disconnect
@@ -242,12 +243,35 @@ pub mod encode {
 
 		for &(topic, qos) in subs.iter() {
 			let topic_len = topic.len() as u16;
-			println!("Writing topic_len = {}", lsb(topic_len));
 			buf.push(msb(topic_len));
 			buf.push(lsb(topic_len));
 			buf.push_all(topic.as_bytes());
 
 			buf.push(qos as u8);
+		}
+
+		buf
+	}
+
+	pub fn unsubscribe(topics: Vec<&str>, msg_id: u16) -> Vec<u8> {
+		let rlength = topics.iter().fold(2, |acc, topic| acc + 2 + topic.len());
+		let buf_len = 1 + rlen_size(rlength) + rlength;
+		let mut buf: Vec<u8> = Vec::with_capacity(buf_len);
+
+		let fixed: u8 = ((MessageType::UNSUBSCRIBE as u8) << 4) | 2;
+		buf.push(fixed);
+
+		rlen(&mut buf, rlength as u32);
+
+		// packet ID
+		buf.push(msb(msg_id));
+		buf.push(lsb(msg_id));
+
+		for topic in topics.iter() {
+			let topic_len = topic.len() as u16;
+			buf.push(msb(topic_len));
+			buf.push(lsb(topic_len));
+			buf.push_all(topic.as_bytes());
 		}
 
 		buf
@@ -285,7 +309,7 @@ pub fn decode(data: &[u8]) -> Option<Message> {
 		PUBCOMP => None,
 		SUBSCRIBE => None,
 		SUBACK => parse_suback(data),
-		UNSUBSCRIBE => None,
+		UNSUBSCRIBE => parse_unsuback(data),
 		UNSUBACK => None,
 		PINGREQ => Some(Message::PingReq),
 		PINGRESP => Some(Message::PingResp),
@@ -305,7 +329,7 @@ fn parse_connack(data: &[u8]) -> Option<Message> {
 }
 
 fn parse_suback(data: &[u8]) -> Option<Message> {
-	let (index, remaining_length) = parse_rlen(data, 1); // msg_id
+	let (index, remaining_length) = parse_rlen(data, 1);
 	parse_short(data, index); // msg_id
 	let rlen = remaining_length + index;
 	
@@ -320,6 +344,12 @@ fn parse_suback(data: &[u8]) -> Option<Message> {
 		i += 1;
 	}
 	Some(Message::SubAck(codes))
+}
+
+fn parse_unsuback(data: &[u8]) -> Option<Message> {
+	let (index, remaining_length) = parse_rlen(data, 1);
+	let msg_id_opt = parse_short(data, index);
+	msg_id_opt.map(|_| Message::UnsubAck)
 }
 
 
