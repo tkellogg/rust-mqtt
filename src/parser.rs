@@ -223,13 +223,8 @@ pub mod encode {
 	}
 
 	pub fn subscribe(subs: Vec<(&str, QoS)>, msg_id: u16) -> Vec<u8> {
-		// I really just wanted to use foldl, but this will work
 		fn remaining_len(subs: &[(&str, QoS)]) -> uint {
-			let mut len = 2;
-			for &(topic, _) in subs.iter() {
-				len += 3 + topic.len();
-			}
-			len
+			subs.iter().fold(2, |acc, tuple| acc + 3 + tuple.val0().len())
 		}
 
 		let rlength = remaining_len(subs.as_slice());
