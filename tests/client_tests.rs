@@ -6,8 +6,8 @@ use mqtt::parser::{Message, QoS};
 
 #[test]
 fn connect_to_broker() {
-	connect();
-	()
+	let mut client = connect();
+	assert_ok(client.disconnect())
 }
 
 #[test]

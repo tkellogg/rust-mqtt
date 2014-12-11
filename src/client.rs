@@ -67,6 +67,11 @@ impl<'a> Client<'a> {
 		}
 	}
 
+	pub fn disconnect(&'a mut self) -> Result<(), MqttError> {
+		let buf = encode::disconnect();
+		self.write(buf.as_slice())
+	}
+
 	fn write(&mut self, buf: &[u8]) -> Result<(), MqttError> {
 		match self.stream.as_mut().map(|x| (*x).write(buf.as_slice())) {
 			Some(Err(e)) => Err(MqttError::BrokenIO(e)),
