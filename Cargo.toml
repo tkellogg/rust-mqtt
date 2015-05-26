@@ -3,3 +3,7 @@
 name = "mqtt"
 version = "0.0.1"
 authors = ["Tim Kellogg <tim@2lemetry.com>"]
+
+[dependencies]
+num = "0.1.24"
+enum_primitive = "0.0.2"

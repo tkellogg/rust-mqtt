@@ -1,13 +1,13 @@
 extern crate mqtt;
 
-use std::io::TcpStream;
+use std::net::TcpStream;
 use mqtt::parser::{encode, decode, Message, QoS, SubAckCode};
 use std::time::duration::Duration;
-use std::io::timer::sleep;
+use std::thread::sleep_ms;
 
 #[test]
 fn send_connect_msg() {
-	let d = Duration::milliseconds(10);
+	let d = 10;
 
 	let mut socket = TcpStream::connect("127.0.0.1:1883").unwrap();
 	let mut socket_readable = socket.clone();
@@ -17,7 +17,7 @@ fn send_connect_msg() {
 	let mut res = socket.write(connect_buf.as_slice());
 	res = res.and_then(|_| socket.flush());
 
-	//sleep(d);
+	//sleep_ms(d);
 
 	let mut buf = [0, ..1024];
 	match socket_readable.read(buf.as_mut_slice()) {
@@ -41,7 +41,7 @@ fn send_connect_msg() {
 	res = res.and_then(|_| socket.write(encode::pingreq().as_slice()));
 	res = res.and_then(|_| socket.flush());
 
-	sleep(d);
+	sleep_ms(d);
 
 	let mut ping_buf = [0 as u8, 4];
 	match socket_readable.read(ping_buf.as_mut_slice()) {
@@ -52,7 +52,7 @@ fn send_connect_msg() {
 	res = res.and_then(|_| socket.write(encode::subscribe(vec![("io.m2m/rust/y", QoS::AtMostOnce)], 1).as_slice()));
 	res = res.and_then(|_| socket.flush());
 
-	sleep(d);
+	sleep_ms(d);
 
 	let mut buf2 = [0, ..1024];
 	match socket_readable.read(buf2.as_mut_slice()) {

@@ -1,15 +1,19 @@
-use std::io::{TcpStream, IoError};
+use std::net::TcpStream;
+use std::io::{Error, Write, Read};
 use parser::{LastWill, Message, encode, decode, QoS};
+use num::FromPrimitive;
 
-#[deriving(Show, PartialEq, FromPrimitive)]
-pub enum ConnectError { WrongProtocolVersion = 1, IdentifierRejected = 2, ServerUnavailable = 3,
-												BadUserOrPassword = 4, NotAuthorized = 5, OtherError }
+enum_from_primitive! {
+	#[derive(Debug, PartialEq)]
+	pub enum ConnectError { WrongProtocolVersion = 1, IdentifierRejected = 2, ServerUnavailable = 3,
+													BadUserOrPassword = 4, NotAuthorized = 5, OtherError }
+}
 
-#[deriving(Show, PartialEq)]
-pub enum MqttError { BrokenIO(IoError), NoConnection, MqttParseError, NoData, 
+#[derive(Debug)]
+pub enum MqttError { BrokenIO(Error), NoConnection, MqttParseError, NoData, 
 										 ConnectRefused(ConnectError), WrongMessage(Message) }
 
-#[deriving(Default)]
+#[derive(Default)]
 pub struct ConnectOptions<'a> {
 	pub host_port: &'a str,
 	pub client_id: &'a str, 
@@ -20,11 +24,11 @@ pub struct ConnectOptions<'a> {
 	pub lwt: Option<&'a LastWill>
 }
 
-#[deriving(Default)]
+#[derive(Default)]
 pub struct Client<'a> {
 	pub options: ConnectOptions<'a>,
-	stream: Option<TcpStream>,
-	last_id: u16
+	pub stream: Option<TcpStream>,
+	pub last_id: u16
 }
 
 impl<'a> Client<'a> {
@@ -50,13 +54,14 @@ impl<'a> Client<'a> {
 																	self.options.clean, 
 																	self.options.lwt);
 
-				self.write(buf.as_slice());
+				// TODO: check this result
+				let _ = self.write(&buf);
 
 				match self.recv() {
 					Ok(Message::Connack(0)) => Ok(()),
 					Ok(Message::Connack(failure)) => {
-						let codeOpt: Option<ConnectError> = FromPrimitive::from_u8(failure);
-						let code = codeOpt.unwrap_or(ConnectError::OtherError);
+						let code_opt: Option<ConnectError> = ConnectError::from_u8(failure);
+						let code = code_opt.unwrap_or(ConnectError::OtherError);
 						Err(MqttError::ConnectRefused(code))
 					},
 					Ok(other) => Err(MqttError::WrongMessage(other)),
@@ -69,13 +74,13 @@ impl<'a> Client<'a> {
 
 	/// Cleanly end the MQTT session. Always do this unless you unexpectedly crash and
 	/// need to receive missed QoS > 0 messages.
-	pub fn disconnect(&'a mut self) -> Result<(), MqttError> {
+	pub fn disconnect(&'a mut self) -> Result<usize, MqttError> {
 		let buf = encode::disconnect();
-		self.write(buf.as_slice())
+		self.write(&buf)
 	}
 
-	fn write(&mut self, buf: &[u8]) -> Result<(), MqttError> {
-		match self.stream.as_mut().map(|x| (*x).write(buf.as_slice())) {
+	fn write(&mut self, buf: &[u8]) -> Result<usize, MqttError> {
+		match self.stream.as_mut().map(|x| (*x).write(buf as &[u8])) {
 			Some(Err(e)) => Err(MqttError::BrokenIO(e)),
 			Some(Ok(res)) => Ok(res),
 			None => Err(MqttError::NoConnection)
@@ -88,12 +93,12 @@ impl<'a> Client<'a> {
 		match self.stream {
 			Some(ref mut stream) => {
 
-				let mut buf = [0, ..1024];
+				let mut buf = [0; 1024];
 
 				match (*stream).read(&mut buf) {
 					Ok(0) => Err(MqttError::NoData),
 					Ok(length) => {
-						let slice = buf.slice_to(length);
+						let (slice, _) = buf.split_at(length);
 						match decode(slice) {
 							Some(msg) => Ok(msg),
 							None => Err(MqttError::MqttParseError)
@@ -107,7 +112,7 @@ impl<'a> Client<'a> {
 		}
 	}
 
-	pub fn publish(&mut self, topic: &str, msg: &str, qos: QoS, retained: bool, dup: bool) -> Result<(), MqttError> {
+	pub fn publish(&mut self, topic: &str, msg: &str, qos: QoS, retained: bool, dup: bool) -> Result<usize, MqttError> {
 		let id = match qos {
 			QoS::AtMostOnce => None,
 			_ => Some(self.next_id())
@@ -115,19 +120,19 @@ impl<'a> Client<'a> {
 
 		let buf = encode::publish(topic, msg, qos, retained, dup, id);
 
-		self.write(buf.as_slice())
+		self.write(&buf)
 	}
 
-	pub fn subscribe(&mut self, subscriptions: Vec<(&str, QoS)>) -> Result<(), MqttError> { 
+	pub fn subscribe(&mut self, subscriptions: Vec<(&str, QoS)>) -> Result<usize, MqttError> { 
 		let id = self.next_id();
 		let buf = encode::subscribe(subscriptions, id);
-		self.write(buf.as_slice())
+		self.write(&buf)
 	}
 
-	pub fn unsubscribe(&mut self, topics: Vec<&str>) -> Result<(), MqttError> {
+	pub fn unsubscribe(&mut self, topics: Vec<&str>) -> Result<usize, MqttError> {
 		let id = self.next_id();
 		let buf = encode::unsubscribe(topics, id);
-		self.write(buf.as_slice())
+		self.write(&buf)
 	}
 }
 
