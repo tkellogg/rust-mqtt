@@ -36,8 +36,8 @@ fn subscribe_and_receive_suback() {
 	}
 }
 
-fn connect<'a>() -> Client<'a> {
-	let mut client = Client { 
+fn connect<'a>() -> &'a mut Client<'a> {
+	let client = &mut Client { 
 		options : ConnectOptions {
 			host_port: "localhost:1883",
 			client_id: "rust-test", 
@@ -48,7 +48,7 @@ fn connect<'a>() -> Client<'a> {
 	};
 
 	match client.connect() {
-		Ok(()) => client,
+		Ok(_) => &mut *client,
 		Err(e) => panic!(e)
 	}
 }

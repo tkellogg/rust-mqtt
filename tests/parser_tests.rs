@@ -10,7 +10,7 @@ fn send_connect_msg() {
 	let d = 10;
 
 	let mut socket = TcpStream::connect("127.0.0.1:1883").unwrap();
-	let mut socket_readable = socket.clone();
+	let mut socket_readable = socket.cloned();
 
 	let connect_buf = encode::connect("tim-rust", None, None, 60, true, None);
 
