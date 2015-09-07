@@ -295,8 +295,6 @@ pub mod encode {
 	}
 }
 
-// 987326 Tuesday 8-10am
-
 pub fn decode(data: &[u8]) -> Option<Message> {
 	use parser::Message;
 	use parser::MessageType::*;
@@ -314,9 +312,9 @@ pub fn decode(data: &[u8]) -> Option<Message> {
 		PUBCOMP => None,
 		SUBSCRIBE => None,
 		SUBACK => parse_suback(data),
-		UNSUBSCRIBE => parse_unsuback(data),
-		UNSUBACK => None,
-		PINGREQ => Some(Message::PingReq),
+		UNSUBSCRIBE => None,
+		UNSUBACK => parse_unsuback(data),
+        PINGREQ => Some(Message::PingReq),
 		PINGRESP => Some(Message::PingResp),
 		DISCONNECT => Some(Message::Disconnect)
 	})

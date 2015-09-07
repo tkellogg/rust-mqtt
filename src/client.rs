@@ -10,7 +10,7 @@ enum_from_primitive! {
 }
 
 #[derive(Debug)]
-pub enum MqttError { BrokenIO(Error), NoConnection, MqttParseError, NoData, 
+pub enum MqttError { BrokenIO(Error), NoConnection, MqttParseError(&'static str), NoData, 
 										 ConnectRefused(ConnectError), WrongMessage(Message) }
 
 #[derive(Default)]
@@ -101,7 +101,7 @@ impl<'a> Client<'a> {
 						let (slice, _) = buf.split_at(length);
 						match decode(slice) {
 							Some(msg) => Ok(msg),
-							None => Err(MqttError::MqttParseError)
+							None => Err(MqttError::MqttParseError("Message unrecognized"))
 						}
 					},
 					Err(e) => Err(MqttError::BrokenIO(e))

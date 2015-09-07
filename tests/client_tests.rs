@@ -6,23 +6,23 @@ use mqtt::parser::{Message, QoS};
 
 #[test]
 fn connect_to_broker() {
-	let client = &mut new_client();
+	let client = &mut new_client("rust-mqtt/test1");
   assert_ok(client.connect());
 	assert_ok(client.disconnect())
 }
 
 #[test]
 fn blind_publish() {
-	let client = &mut new_client();
+	let client = &mut new_client("rust-mqtt/test2");
   assert_ok(client.connect());
-	assert_ok(client.publish("foo/bar", "test message", QoS::AtMostOnce, false, false));
+	assert_ok(client.publish("rust-mqtt/foo/bar", "test message", QoS::AtMostOnce, false, false));
 }
 
 #[test]
 fn subscribe_and_receive_suback() {
-	let client = &mut new_client();
+	let client = &mut new_client("rust-mqtt/test3");
   assert_ok(client.connect());
-	let subs = vec![("foo/bar", QoS::AtMostOnce)];
+	let subs = vec![("rust-mqtt/foo/bar", QoS::AtMostOnce)];
 	assert_ok(client.subscribe(subs));
 
 	match client.recv() {
@@ -31,19 +31,22 @@ fn subscribe_and_receive_suback() {
 		Err(e) => panic!(e)
 	};
 
-	assert_ok(client.unsubscribe(vec!["foo/bar"]));
+	assert_ok(client.unsubscribe(vec!["rust-mqtt/foo/bar"]));
 	match client.recv() {
 		Ok(Message::UnsubAck) => (),
 		Ok(_) => panic!("Not an UNSUBSCRIBE"),
-		Err(e) => panic!(e)
+		Err(e) => {
+      println!("Expected UNSUBSCRIBE but got {:?}", e);
+      panic!(e)
+    }
 	}
 }
 
-fn new_client<'a>() -> Client<'a> {
+fn new_client<'a>(id: &'a str) -> Client<'a> {
 	Client { 
 		options : ConnectOptions {
-			host_port: "iot.eclipse.og:1883",
-			client_id: "rust-test", 
+			host_port: "iot.eclipse.org:1883",
+			client_id: id, 
 			clean: true,
 			..Default::default()
 		}, 
@@ -54,6 +57,9 @@ fn new_client<'a>() -> Client<'a> {
 fn assert_ok<A>(res: Result<A, MqttError>) {
 	match res {
 		Ok(_) => (),
-		Err(e) => panic!(e)
+		Err(e) => {
+      println!("{:?}", e);
+      panic!(e)
+    }
 	}
 }
