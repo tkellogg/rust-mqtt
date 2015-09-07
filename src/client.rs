@@ -42,7 +42,7 @@ impl<'a> Client<'a> {
 
 	/// Synchronously connect to the MQTT broker using the options set during creation of
 	/// the Client struct.
-	pub fn connect(&'a mut self) -> Result<(), MqttError> {
+	pub fn connect(&mut self) -> Result<(), MqttError> {
 		match TcpStream::connect(self.options.host_port) {
 			Ok(stream) => {
 				self.stream = Some(stream);

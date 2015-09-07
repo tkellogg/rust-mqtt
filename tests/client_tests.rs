@@ -6,19 +6,22 @@ use mqtt::parser::{Message, QoS};
 
 #[test]
 fn connect_to_broker() {
-	let mut client = connect();
+	let client = &mut new_client();
+  assert_ok(client.connect());
 	assert_ok(client.disconnect())
 }
 
 #[test]
 fn blind_publish() {
-	let mut client = connect();
-	client.publish("foo/bar", "test message", QoS::AtMostOnce, false, false);
+	let client = &mut new_client();
+  assert_ok(client.connect());
+	assert_ok(client.publish("foo/bar", "test message", QoS::AtMostOnce, false, false));
 }
 
 #[test]
 fn subscribe_and_receive_suback() {
-	let mut client = connect();
+	let client = &mut new_client();
+  assert_ok(client.connect());
 	let subs = vec![("foo/bar", QoS::AtMostOnce)];
 	assert_ok(client.subscribe(subs));
 
@@ -36,20 +39,15 @@ fn subscribe_and_receive_suback() {
 	}
 }
 
-fn connect<'a>() -> &'a mut Client<'a> {
-	let client = &mut Client { 
+fn new_client<'a>() -> Client<'a> {
+	Client { 
 		options : ConnectOptions {
-			host_port: "localhost:1883",
+			host_port: "iot.eclipse.og:1883",
 			client_id: "rust-test", 
 			clean: true,
 			..Default::default()
 		}, 
 		..Default::default() 
-	};
-
-	match client.connect() {
-		Ok(_) => &mut *client,
-		Err(e) => panic!(e)
 	}
 }
 
